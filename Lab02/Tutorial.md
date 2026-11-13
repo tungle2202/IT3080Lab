@@ -153,12 +153,13 @@ show mac address-table
 
 #### 3.1. A problem I ran into on Windows
 
-**Symptom** (from memory, not yet re-checked): the ARP cache had been cleared on all 4 PCs, the default gateway was empty, and no other network was connected. Still:
+**Symptom** (partly from memory): the ARP cache had been cleared on all 4 PCs, subnet masks were checked, there was no default gateway, and no other network was connected. Still:
 
-- **PC2 → PC3** printed `Reply from <some IP>: Destination host unreachable`.
+- **PC2 → PC3** and **PC4 → PC3** printed `Reply from <IP>: Destination host unreachable`. In at least one of them, `<IP>` was **not** the sender's own IP.
 - **PC3 → PC4** printed `Request timed out`.
+- Later, with the same setup, a case that had shown `Destination host unreachable` changed to `Request timed out` (not 100% sure).
 
-The expected result for both cases was `PING: transmit failed. General failure.` Nobody (including the TA) knew why.
+The expected result for all of these was `PING: transmit failed. General failure.` Nobody (including the TA) knew why.
 
 **What each message means on Windows:**
 
@@ -169,15 +170,21 @@ The expected result for both cases was `PING: transmit failed. General failure.`
 | `Reply from <another IP>: Destination host unreachable` | The packet was sent and **another device** (usually a router) sent back an ICMP error. |
 | `Request timed out` | The echo request **was sent** (ARP, if any, succeeded), but no echo reply came back: the destination didn't get it, can't answer it, or a firewall dropped it. |
 
-So in **both** cases the PC had some route to the destination; otherwise it would have printed `General failure`. Clearing the ARP cache doesn't change this, because Windows chooses the route before it sends any ARP request.
+So in **these** cases the PC had some route to the destination; otherwise it would have printed `General failure`. Clearing the ARP cache doesn't change this, because Windows chooses the route before it sends any ARP request.
 
-**Status: unresolved.** These were ruled out: all 4 PCs were personal laptops, `ipconfig` showed only the lab NIC connected and no default gateway, and there were no virtual adapters or VPNs.
+> **Help wanted:** If you have found the cause or a fix for this problem, please update this section and contribute it to this repository (commit or pull request), so future students can learn from it.
+
+**Status: unresolved.** These were ruled out: all 4 PCs were personal laptops, `ipconfig` showed only the lab NIC connected and no default gateway, there were no virtual adapters or VPNs, and the subnet masks were correct.
+
+**Key clue:** an ICMP error from an IP that is not the sender's own means **another device really sent a packet back**. In a closed network of 4 PCs and 1 switch, that device can only be one of the other PCs or the switch itself (the SF350 has its own management IP, `192.168.1.254` by default when DHCP gets no answer). And for a device to send an error back, the sender must first have sent it a packet.
 
 **What is still unchecked:**
 
-1. **The exact output.** The symptoms above are from memory. "Reply from X" matters a lot: if X is the sender's own IP, the failure is local (ARP); if X is any other IP, some device really answered. But I quite sure it's from other IP.
+1. **Who owns `<IP>`.** Right after the ping, run `arp -a` on the sender and find the MAC address of `<IP>`. Compare it with the MAC of each PC (`ipconfig /all`) and of the switch (`show system` or the label on the switch). On the switch, `show ip interface` lists its IP addresses.
 2. **The routing table** (`route print -4`). `ipconfig` only shows the default gateway. It doesn't show persistent routes or other routes that could match the destination.
-3. **Third-party security software** (antivirus with its own firewall or network filter), which can change how failed sends are reported. We used Windows Defender only, and turned off the Private Network firewall. But there might be some other hidden problems we didn't see.
+3. **The switch configuration**: whether it has an IP interface in VLAN 67, and whether IP routing is enabled (`show running-config`).
+4. **Why the result changed over time.** Neighbor (ARP) cache entries expire and change state, and devices rate-limit the ICMP error messages they send. Either one can turn `Destination host unreachable` into `Request timed out` without any configuration change.
+5. **Third-party security software** (antivirus with its own firewall or network filter).
 
 **How to reproduce it without the lab:**
 
